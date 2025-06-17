@@ -18,6 +18,11 @@
         }
         canvas {
             display: block;
+            /* Ensure canvas fills container and is responsive */
+            width: 100%;
+            height: 100%;
+            max-width: 100vw; /* Ensure it doesn't overflow viewport */
+            max-height: 100vh; /* Ensure it doesn't overflow viewport */
         }
         #birthday-message {
             position: absolute;
@@ -49,6 +54,15 @@
                 font-size: 1.8em;
                 top: 10px;
             }
+        }
+
+        /* Specific styles for smaller mobile screens (max-width: 480px) */
+        @media (max-width: 480px) {
+            #birthday-message {
+                font-size: 1.5em; /* Adjust font size for very small screens */
+                top: 5px;
+            }
+            /* The main responsiveness for the cake will be handled in Three.js camera logic */
         }
 
         #loading-overlay {
@@ -93,45 +107,74 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Loading Overlay -->
     <div id="loading-overlay">
         <img src="ab.webp" alt="Loading Image">
         <div class="loading-text">Happy 55th Birthday, AMMA!</div>
     </div>
 
+    <!-- Birthday Message -->
     <div id="birthday-message">Happy 55th Birthday, AMMA!</div>
 
+    <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls for camera interaction -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
+        // Global variables for Three.js scene
         let scene, camera, renderer, controls;
-        let cakeGroup;
+        let cakeGroup; // Group for all cake elements
+        
+        // Cake dimensions and properties
         const cakeHeightPerLayer = 1.2;
         const icingThickness = 0.15;
         const numberOfLayers = 5;
+        // Radii for each cake layer, from bottom to top
         const layerRadii = [4.5, 3.8, 3.0, 2.3, 1.6];
         
+        // Array to store elements that will flicker (candles)
         const allCandleFlickerElements = [];
 
+        /**
+         * Initializes the Three.js scene, camera, renderer, and objects.
+         */
         function init() {
+            // Scene setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf0f8ff);
+            scene.background = new THREE.Color(0xf0f8ff); // Light blue background
 
+            // Camera setup
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            const totalCakeHeight = (cakeHeightPerLayer * numberOfLayers) + (icingThickness * numberOfLayers);
-            camera.position.set(0, totalCakeHeight * 0.8, layerRadii[0] * 3.5);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true }); // Enable anti-aliasing for smoother edges
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            document.body.appendChild(renderer.domElement);
+            renderer.shadowMap.enabled = true; // Enable shadow mapping
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+            document.body.appendChild(renderer.domElement); // Add canvas to the body
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            // OrbitControls for camera interaction
+            // IMPORTANT: Initialize controls BEFORE calling updateCameraPosition
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Enable smooth camera movement
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false; // Prevents panning the entire scene
+            controls.minDistance = 5; // Minimum zoom distance
+            controls.maxDistance = 25; // Maximum zoom distance
+            controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below the ground
+
+            // Initial camera position adjustment for responsiveness
+            // This ensures the cake and plate are visible on various screen sizes
+            updateCameraPosition(); 
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Soft ambient light
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffee, 0.9);
-            directionalLight.position.set(5, 10, 5);
-            directionalLight.castShadow = true;
+            const directionalLight = new THREE.DirectionalLight(0xffffee, 0.9); // Brighter directional light
+            directionalLight.position.set(5, 10, 5); // Position of the light source
+            directionalLight.castShadow = true; // Light casts shadows
+            // Configure shadow map size and camera for directional light
             directionalLight.shadow.mapSize.width = 1024;
             directionalLight.shadow.mapSize.height = 1024;
             directionalLight.shadow.camera.near = 0.5;
@@ -142,59 +185,68 @@
             directionalLight.shadow.camera.bottom = -10;
             scene.add(directionalLight);
 
+            // Plate dimensions
             const plateRadius = 6;
             const plateThickness = 0.5;
             const rimTubeRadius = 0.3;
 
+            // Calculate the base Y position for the cake layers
             const cakeBaseY = - (cakeHeightPerLayer * numberOfLayers + icingThickness * (numberOfLayers - 1)) / 2;
 
+            // Cake Plate
             const plateGeometry = new THREE.CylinderGeometry(plateRadius, plateRadius, plateThickness, 64);
             const plateMaterial = new THREE.MeshStandardMaterial({
-                color: 0xf0f0f0,
+                color: 0xf0f0f0, // Light grey
                 roughness: 0.2,
                 metalness: 0.8
             });
             const cakePlate = new THREE.Mesh(plateGeometry, plateMaterial);
-            cakePlate.position.y = cakeBaseY - (plateThickness / 2) - 0.1;
+            cakePlate.position.y = cakeBaseY - (plateThickness / 2) - 0.1; // Position below the cake
             cakePlate.castShadow = true;
             cakePlate.receiveShadow = true;
             scene.add(cakePlate);
 
+            // Cake Plate Rim (golden)
             const rimGeometry = new THREE.TorusGeometry(plateRadius, rimTubeRadius, 16, 64);
             const rimMaterial = new THREE.MeshStandardMaterial({
-                color: 0xd4af37,
+                color: 0xd4af37, // Gold color
                 roughness: 0.3,
                 metalness: 0.9
             });
             const cakePlateRim = new THREE.Mesh(rimGeometry, rimMaterial);
             cakePlateRim.position.y = cakePlate.position.y + plateThickness / 2 + rimTubeRadius / 2;
-            cakePlateRim.rotation.x = Math.PI / 2;
+            cakePlateRim.rotation.x = Math.PI / 2; // Rotate to lie flat
             cakePlateRim.castShadow = true;
             cakePlateRim.receiveShadow = true;
             scene.add(cakePlateRim);
 
+            // Cake Group to hold all cake layers and decorations
             cakeGroup = new THREE.Group();
 
+            // Materials for cake and icing
             const whiteCakeBodyMaterial = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
+                color: 0xffffff, // White cake body
                 roughness: 0.6,
                 metalness: 0.05
             });
 
             const pinkIcingMaterial = new THREE.MeshStandardMaterial({
-                color: 0xffa0c0,
+                color: 0xffa0c0, // Pink icing
                 roughness: 0.3,
                 metalness: 0.01,
-                clearcoat: 0.9,
+                clearcoat: 0.9, // Adds a glossy finish
                 clearcoatRoughness: 0.05
             });
 
+            // Variable to track current Y position for stacking layers
             let currentY = - (cakeHeightPerLayer * numberOfLayers + icingThickness * (numberOfLayers - 1)) / 2;
 
+            // Create cake layers
             for (let i = 0; i < numberOfLayers; i++) {
                 const radius = layerRadii[i];
                 const icingMat = pinkIcingMaterial; 
 
+                // Cake layer mesh
                 const cakeGeometry = new THREE.CylinderGeometry(radius, radius, cakeHeightPerLayer, 64);
                 const cakeLayer = new THREE.Mesh(cakeGeometry, whiteCakeBodyMaterial);
                 cakeLayer.position.y = currentY + cakeHeightPerLayer / 2;
@@ -202,6 +254,7 @@
                 cakeLayer.receiveShadow = true;
                 cakeGroup.add(cakeLayer);
 
+                // Top icing for the current layer
                 const topIcingGeometry = new THREE.CylinderGeometry(radius + 0.1, radius + 0.1, icingThickness, 64);
                 const topIcing = new THREE.Mesh(topIcingGeometry, icingMat);
                 topIcing.position.y = currentY + cakeHeightPerLayer + icingThickness / 2;
@@ -209,64 +262,77 @@
                 topIcing.receiveShadow = true;
                 cakeGroup.add(topIcing);
 
+                // Border around the top icing
                 const borderGeometry = new THREE.TorusGeometry(radius + 0.1, 0.05, 16, 100);
                 const border = new THREE.Mesh(borderGeometry, icingMat);
-                border.rotation.x = Math.PI / 2;
+                border.rotation.x = Math.PI / 2; // Orient horizontally
                 border.position.y = currentY + cakeHeightPerLayer + icingThickness;
                 border.castShadow = true;
                 cakeGroup.add(border);
 
+                // Move currentY up for the next layer
                 currentY += cakeHeightPerLayer + icingThickness;
             }
 
-            scene.add(cakeGroup);
+            scene.add(cakeGroup); // Add the entire cake group to the scene
 
+            // Candle materials
             const candleMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0xf0f0f0,
+                color: 0xf0f0f0, // Light grey candle body
                 roughness: 0.3,
                 metalness: 0.1
             });
             
             const goldMaterial = new THREE.MeshStandardMaterial({
-                color: 0xd4af37,
+                color: 0xd4af37, // Gold rings
                 roughness: 0.2,
                 metalness: 0.9
             });
             
             const candleBodyGeometry = new THREE.CylinderGeometry(0.15, 0.15, 2, 32);
             const wickGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8);
-            const wickMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const wickMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Dark grey wick
 
             const flameGeometry = new THREE.ConeGeometry(0.15, 0.5, 16);
-            flameGeometry.translate(0, 0.25, 0);
+            flameGeometry.translate(0, 0.25, 0); // Move origin to base of cone
             const flameMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffd700,
+                color: 0xffd700, // Yellow flame
                 transparent: true,
                 opacity: 0.8
             });
             const glowGeometry = new THREE.SphereGeometry(0.25, 16, 16);
             const glowMaterial = new THREE.MeshBasicMaterial({
-                color: 0xff5500,
+                color: 0xff5500, // Orange glow
                 transparent: true,
                 opacity: 0.4,
-                blending: THREE.AdditiveBlending
+                blending: THREE.AdditiveBlending // Blends colors for a glowing effect
             });
 
+            // Positions for the candles on the top layer of the cake
             const candlePositions = [
                 { x: -1.0, z: 0.0 },
                 { x: 1.0, z: 0.0 },
                 { x: 0.0, z: -1.0 }
             ];
 
+            // Calculate the Y position for the base of the candles
             const candleBaseYOnCake = currentY - icingThickness;
 
+            /**
+             * Creates a single candle with flickering flame.
+             * @param {number} x - X coordinate for the candle.
+             * @param {number} z - Z coordinate for the candle.
+             * @param {number} baseCakeY - Base Y position on the cake for the candle.
+             */
             function createSingleCandle(x, z, baseCakeY) {
+                // Candle body
                 const candle = new THREE.Mesh(candleBodyGeometry, candleMaterial);
                 candle.position.set(x, baseCakeY + 1, z);
                 candle.castShadow = true;
                 candle.receiveShadow = true;
                 cakeGroup.add(candle);
 
+                // Gold rings on the candle
                 for (let i = 0; i < 3; i++) {
                     const ringGeometry = new THREE.TorusGeometry(0.16, 0.02, 16, 32);
                     const ring = new THREE.Mesh(ringGeometry, goldMaterial);
@@ -277,24 +343,29 @@
                     cakeGroup.add(ring);
                 }
                 
+                // Wick
                 const wick = new THREE.Mesh(wickGeometry, wickMaterial);
                 wick.position.set(x, baseCakeY + 2.1, z);
                 wick.castShadow = true;
                 cakeGroup.add(wick);
                 
+                // Point light for flame glow
                 const flameGlowLight = new THREE.PointLight(0xffaa00, 1.5, 3, 1.5);
                 flameGlowLight.position.set(x, baseCakeY + 2.3, z);
                 flameGlowLight.castShadow = true;
                 scene.add(flameGlowLight);
 
+                // Flame core mesh
                 const flameCore = new THREE.Mesh(flameGeometry, flameMaterial);
                 flameCore.position.set(x, baseCakeY + 2.3, z);
                 cakeGroup.add(flameCore);
                 
+                // Outer glow effect for flame
                 const flameOuterGlow = new THREE.Mesh(glowGeometry, glowMaterial);
                 flameOuterGlow.position.set(x, baseCakeY + 2.3 + 0.1, z);
                 cakeGroup.add(flameOuterGlow);
                 
+                // Store elements for flickering animation
                 allCandleFlickerElements.push({
                     light: flameGlowLight,
                     core: flameCore,
@@ -303,15 +374,18 @@
                 });
             }
 
+            // Create all candles
             candlePositions.forEach(pos => {
                 createSingleCandle(pos.x, pos.z, candleBaseYOnCake);
             });
 
+            // Decoration materials
             const whiteSprinkleMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
             const whitePearlMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.2, metalness: 0.05, clearcoat: 0.5 });
             const pinkSwirlMaterial = new THREE.MeshStandardMaterial({ color: 0xffa0c0, roughness: 0.4 });
             const sideDotMaterial = new THREE.MeshStandardMaterial({ color: 0xff69b4, roughness: 0.5 });
 
+            // Decoration counts and sizes
             const sprinkleCount = 300;
             const pearlCountPerLayer = 25;
             const rosetteCountPerLayer = 8;
@@ -319,12 +393,14 @@
             const dotVerticalSpacing = 0.3;
             const dotRadius = 0.06;
 
+            // Sprinkles (randomly distributed)
             const sprinkleMaterials = [whiteSprinkleMaterial, pinkIcingMaterial];
             for (let i = 0; i < sprinkleCount; i++) {
                 const layerIndex = Math.floor(Math.random() * numberOfLayers);
                 const radius = layerRadii[layerIndex];
                 const sprinkleType = Math.random();
                 let sprinkleGeometry;
+                // Randomly choose between box and sphere sprinkles
                 if (sprinkleType < 0.6) {
                     sprinkleGeometry = new THREE.BoxGeometry(0.08, 0.25, 0.08);
                 } else {
@@ -335,6 +411,7 @@
 
                 const angle = Math.random() * Math.PI * 2;
                 const distFromCenter = Math.random() * (radius - 0.2);
+                // Calculate sprinkle Y position based on its layer
                 const sprinkleY = - (cakeHeightPerLayer * numberOfLayers + icingThickness * (numberOfLayers - 1)) / 2 + (cakeHeightPerLayer + icingThickness) * (layerIndex + 1) - icingThickness / 2 + 0.01;
                 sprinkle.position.set(Math.cos(angle) * distFromCenter, sprinkleY, Math.sin(angle) * distFromCenter);
 
@@ -343,6 +420,7 @@
                 cakeGroup.add(sprinkle);
             }
 
+            // Pearls around each icing border
             for (let i = 0; i < numberOfLayers; i++) {
                 const radius = layerRadii[i];
                 const layerIcingTopY = - (cakeHeightPerLayer * numberOfLayers + icingThickness * (numberOfLayers - 1)) / 2 + (cakeHeightPerLayer + icingThickness) * (i + 1) - icingThickness / 2;
@@ -362,6 +440,7 @@
                 }
             }
 
+            // Rosettes on the top of each cake layer
             const rosetteGeometry = new THREE.SphereGeometry(0.3, 16, 16);
             for (let i = 0; i < numberOfLayers; i++) {
                 const radius = layerRadii[i];
@@ -369,8 +448,8 @@
 
                 for (let j = 0; j < rosetteCountPerLayer; j++) {
                     const rosette = new THREE.Mesh(rosetteGeometry, pinkSwirlMaterial);
-                    const angle = (Math.PI * 2 / rosetteCountPerLayer) * j + Math.random() * 0.2;
-                    const distFromCenter = radius * 0.7;
+                    const angle = (Math.PI * 2 / rosetteCountPerLayer) * j + Math.random() * 0.2; // Small random offset for variety
+                    const distFromCenter = radius * 0.7; // Place rosettes inwards from edge
 
                     rosette.position.x = Math.cos(angle) * distFromCenter;
                     rosette.position.z = Math.sin(angle) * distFromCenter;
@@ -381,6 +460,7 @@
                 }
             }
 
+            // Side dots on the cake layers
             let dotCurrentY = - (cakeHeightPerLayer * numberOfLayers + icingThickness * (numberOfLayers - 1)) / 2;
 
             for (let i = 0; i < numberOfLayers; i++) {
@@ -394,7 +474,7 @@
                         const dot = new THREE.Mesh(dotGeometry, sideDotMaterial);
 
                         const angle = (Math.PI * 2 / dotsPerLayerSide) * j;
-                        dot.position.x = Math.cos(angle) * (radius + 0.05);
+                        dot.position.x = Math.cos(angle) * (radius + 0.05); // Slightly outside the cake body
                         dot.position.z = Math.sin(angle) * (radius + 0.05);
                         dot.position.y = layerBottomY + dotVerticalSpacing / 2 + k * dotVerticalSpacing;
 
@@ -405,50 +485,87 @@
                 dotCurrentY += cakeHeightPerLayer + icingThickness;
             }
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = false;
-            controls.minDistance = 5;
-            controls.maxDistance = 25;
-            controls.maxPolarAngle = Math.PI / 2;
-
+            // Event listener for window resizing
             window.addEventListener('resize', onWindowResize, false);
         }
 
+        /**
+         * Updates the camera's position and aspect ratio on window resize.
+         */
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.updateProjectionMatrix(); // Update camera's projection matrix
+            renderer.setSize(window.innerWidth, window.innerHeight); // Resize renderer
+            updateCameraPosition(); // Re-adjust camera position for responsiveness
         }
 
+        /**
+         * Adjusts camera's Z position based on screen width to ensure full view.
+         */
+        function updateCameraPosition() {
+            const totalCakeHeight = (cakeHeightPerLayer * numberOfLayers) + (icingThickness * numberOfLayers);
+            let targetZ;
+
+            // Adjust camera distance based on viewport width
+            if (window.innerWidth <= 480) {
+                // For small mobile screens, pull the camera back further
+                targetZ = layerRadii[0] * 5.5; 
+            } else if (window.innerWidth <= 768) {
+                // For tablets or medium screens
+                targetZ = layerRadii[0] * 4.5;
+            } else {
+                // For desktop or larger screens
+                targetZ = layerRadii[0] * 3.5;
+            }
+
+            camera.position.set(0, totalCakeHeight * 0.8, targetZ);
+            // Only update controls if they are defined
+            if (controls) {
+                controls.update(); // Update controls after changing camera position
+            }
+        }
+
+        /**
+         * Animation loop for the scene.
+         */
         function animate() {
-            requestAnimationFrame(animate);
+            requestAnimationFrame(animate); // Request next frame
 
-            controls.update();
+            // Only update controls if they are defined
+            if (controls) {
+                controls.update(); // Update OrbitControls
+            }
 
-            const time = Date.now() * 0.001;
+            const time = Date.now() * 0.001; // Current time in seconds for animations
+            
+            // Candle flicker animation
             allCandleFlickerElements.forEach(candleFlicker => {
+                // Light intensity fluctuation
                 candleFlicker.light.intensity = 1.5 + Math.sin(time * 10 + candleFlicker.basePos.x) * 0.5;
                 
+                // Vertical flickering motion
                 const offsetY = Math.sin(time * 5 + candleFlicker.basePos.y) * 0.05;
                 candleFlicker.light.position.y = candleFlicker.basePos.y + offsetY;
                 candleFlicker.core.position.y = candleFlicker.basePos.y + offsetY;
                 candleFlicker.glow.position.y = candleFlicker.basePos.y + 0.1 + offsetY;
                 
+                // Scale pulsation
                 const scale = 1 + Math.sin(time * 8 + candleFlicker.basePos.z) * 0.1;
                 candleFlicker.core.scale.set(scale, scale, scale);
                 candleFlicker.glow.scale.set(scale, scale, scale);
                 
+                // Slight rotation for flame effect
                 candleFlicker.core.rotation.z = Math.sin(time * 3 + candleFlicker.basePos.x) * 0.1;
             });
 
-            renderer.render(scene, camera);
+            renderer.render(scene, camera); // Render the scene
         }
 
+        // Initialize and start animation when the window loads
         window.onload = function () {
-            init();
-            animate();
+            init(); // Initialize the Three.js scene
+            animate(); // Start the animation loop
+            // Hide loading overlay after scene is loaded
             const loadingOverlay = document.getElementById('loading-overlay');
             if (loadingOverlay) {
                 loadingOverlay.classList.add('hidden');
